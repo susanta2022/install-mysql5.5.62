@@ -1,0 +1,232 @@
+--- # COPY LIST OF RPM FILE TO NODE
+- hosts: demo
+  user: ansadmin
+  become: yes
+  connection: ssh
+
+  vars:
+     directory: ./download
+     file_extension: rpm
+     mysql556_common: mysql-community-common   
+
+  tasks:
+         - name: mkdir /tmp/RPMS
+           file: path=/tmp/RPMS state=directory
+           register: rpm_files
+
+         - name: copy PRMs to /tmp/RPMS
+           copy:
+                src: "{{ item }}" 
+                dest: /tmp/RPMS
+           register: rpms_copied
+        
+                     
+
+           with_fileglob:
+                - '{{directory}}/*.{{file_extension}}'
+
+        
+         - debug:
+             msg: "{{rpms_copied}}"
+
+         - debug:
+             msg: "{{rpm_files}}"
+
+         
+         - name: File not found
+           fail: 
+               msg: "<<<========== specified file with txt extentions are not found ==========>>"
+           when: rpms_copied.results|length == 0
+
+         - name: set set_fact
+           set_fact:
+             rpm_list: "{{ rpms_copied.results | map(attribute='dest') | list }}"
+ 
+        
+         - debug:
+             msg: "{{rpm_list}}"
+
+         - name: check is package installed or not
+           command: rpm -q --qf "%{VERSION}\n" "{{item}}"
+           args:
+             warn: false
+ 
+           with_items:
+                       - mysql-community-common
+                       - mysql-community-client
+                       - mysql-community-libs
+                       - mysql-community-server
+
+           register:  package_inatalled
+           failed_when: false
+           
+         - debug:
+             msg: "{{package_inatalled.results}}"
+
+         - name: <<==== check mysql community common package version if exist then remove from node =======>>
+           action: yum name='{{package_inatalled.results[0].item}}' state=absent           
+           #shell: "rpm -q --qf \"%{VERSION}\n\" {{item[0]}}"                    
+               
+           #args:
+            #warn: false
+           register: mysql_community_common_package_installed_version
+           when: package_inatalled.results[{{item[1]}}].rc !=1
+           with_nested:
+                       - ['mysql-community-common']
+                       - [0]
+                      
+         - debug:
+             msg: '{{mysql_community_common_package_installed_version.results[0].item[0]}}'
+
+         - name: <<=======remove /usr/share/mysql=============>>
+           stat: 
+               path: "/usr/share/mysql"
+           register: usr_share_mysql
+
+         - name: <<========remove if file exists========>>
+           file:
+              path: /usr/share/mysql
+              state: absent 
+           when: usr_share_mysql.stat.exists
+
+
+         - name: <<=======remove /var/lib/mysql=============>>
+           stat:
+               path: "/var/lib/mysql"
+           register: var_lib_mysql
+
+         - name: <<========remove if file exists========>>
+           file:
+              path: /var/lib/mysql
+              state: absent
+           when: var_lib_mysql.stat.exists
+    
+         - name: <<===============set package for mysql-community-common ==============>>>
+           set_fact:
+                  common_pkg: "{% for rpm_list in rpm_list %} {% if 'mysql-community-common' in rpm_list %} {{rpm_list}} {%endif%} {% endfor %}"
+           with_items:
+                   - 0
+                   - 1
+                   - 2
+                   - 3
+
+         - debug:
+            msg: "{{common_pkg}}"          
+         
+
+         - name: <<=========== install mysql community common package ==========>>>
+           action: yum name={{common_pkg}} state=installed
+           register: common_check
+
+           when: '"mysql-community-common" in rpm_list[{{item}}]'
+           with_items:
+                      - 0
+                      - 1
+                      - 2
+                      - 3
+         - debug:
+              msg: "<<<====== mysql community common package install successful ============>>> "
+
+         - name: <<===============set package for mysql-community-libs ==============>>>
+           set_fact:
+                  libs_pkg: "{% for rpm_list in rpm_list %} {% if 'mysql-community-libs' in rpm_list %} {{rpm_list}} {%endif%} {% endfor %}"
+           with_items:
+                   - 0
+                   - 1
+                   - 2
+                   - 3
+
+         - debug:
+            msg: "{{libs_pkg}}"          
+         
+
+         - name: <<=========== install  mysql-community-libs package  ==========>>>
+           action: yum name={{libs_pkg}} state=installed
+           register: libs_check
+           
+
+           when: '"mysql-community-libs" in rpm_list[{{item}}]'
+           with_items:
+                      - 0
+                      - 1
+                      - 2
+                      - 3
+         - debug:
+              msg: "<<<====== mysql community libs package install successful ============>>>"
+
+               
+         - name: <<===============set package for mysql-community-client ==============>>>
+           set_fact:
+                  client_pkg: "{% for rpm_list in rpm_list %} {% if 'mysql-community-client' in rpm_list %} {{rpm_list}} {%endif%} {% endfor %}"
+           with_items:
+                   - 0
+                   - 1
+                   - 2
+                   - 3
+
+         - debug:
+            msg: "{{client_pkg}}"          
+         
+
+         - name: <<=========== install  mysql-community-client package  ==========>>>
+           action: yum name={{client_pkg}} state=installed
+           register: client_check
+
+           when: '"mysql-community-client" in rpm_list[{{item}}]'
+           with_items:
+                      - 0
+                      - 1
+                      - 2
+                      - 3
+         - debug:
+              msg: "<<<<======= mysql commynity client package install successfull  =======>>>>"
+         
+          
+         - name: <<===============set package for mysql-community-server ==============>>>
+           set_fact:
+                  server_pkg: "{% for rpm_list in rpm_list %} {% if 'mysql-community-server' in rpm_list %} {{rpm_list}} {%endif%} {% endfor %}"
+           with_items:
+                   - 0
+                   - 1
+                   - 2
+                   - 3
+
+         - debug:
+            msg: "{{server_pkg}}"          
+         
+
+         - name: <<=========== install  mysql-community-server package  ==========>>>
+           action: yum name={{server_pkg}} state=installed
+           register: server_check
+           notify: restart_mysqld
+
+           when: '"mysql-community-server" in rpm_list[{{item}}]'
+           with_items:
+                      - 0
+                      - 1
+                      - 2
+                      - 3
+         - debug:
+              msg: "<<<======= mysql community server package install successful ========>>> "
+
+         - name: <<<========== Checking if a file exists or not ==============>>>
+           stat:
+                 path: "/tmp/RPMS"
+           register: file_data
+
+         - name: <<<===== Remove if  file exist ===========>>>          
+           file:
+              path: /tmp/RPMS
+              state: absent
+
+           when: file_data.stat.exists
+         
+         
+                    
+              
+ 
+  handlers:
+         - name: restart_mysqld
+           action: service name=mysqld state=restarted
+
+
